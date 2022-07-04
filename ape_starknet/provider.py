@@ -259,9 +259,12 @@ class StarknetProvider(SubprocessProvider, ProviderAPI, StarknetBase):
             returndata = txn_info.get("result", [])
             receipt.returndata = returndata.copy()
 
+            if txn.signature:
+                # When specifying a sender, the return data is always
+                # prefixed with the number of items; remove it
+                returndata = returndata[1:]
+
             return_value = self.starknet.decode_returndata(txn.method_abi, returndata)
-            if isinstance(return_value, (list, tuple)) and len(return_value) == 1:
-                return_value = return_value[0]
             receipt.return_value = return_value
 
         return receipt
