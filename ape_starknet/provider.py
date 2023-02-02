@@ -9,7 +9,7 @@ from ape.api import BlockAPI, ProviderAPI, ReceiptAPI, SubprocessProvider, Trans
 from ape.api.networks import LOCAL_NETWORK_NAME
 from ape.exceptions import ProviderNotConnectedError, TransactionError, VirtualMachineError
 from ape.logging import logger
-from ape.types import AddressType, BlockID, ContractLog, LogFilter, RawAddress
+from ape.types import AddressType, BlockID, CallTreeNode, ContractLog, LogFilter, RawAddress
 from ape.utils import DEFAULT_NUMBER_OF_TEST_ACCOUNTS, cached_property, raises_not_implemented
 from hexbytes import HexBytes
 from requests import Session
@@ -138,6 +138,10 @@ class StarknetProvider(ProviderAPI, StarknetBase):
 
         return network_config.get("uri") or f"http://127.0.0.1:{DEFAULT_PORT}"
 
+    @property
+    def chain_id(self) -> int:
+        return get_chain_id(self.network.name).value
+
     def connect(self):
         self.client = self._create_client()
 
@@ -147,10 +151,6 @@ class StarknetProvider(ProviderAPI, StarknetBase):
 
     def update_settings(self, new_settings: dict):
         pass
-
-    @property
-    def chain_id(self) -> int:
-        return get_chain_id(self.network.name).value
 
     @handle_client_errors
     def get_balance(self, address: AddressType) -> int:
@@ -244,6 +244,13 @@ class StarknetProvider(ProviderAPI, StarknetBase):
 
         starknet_obj = txn._as_call()
         return self.connected_client.call_contract_sync(starknet_obj)
+
+    def get_call_tree(self, txn_hash: str) -> CallTreeNode:
+        receipt = self.starknet_client.get_transaction_receipt_sync(tx_hash=txn_hash)
+        trace = self._get_single_trace(receipt.block_number, int(txn_hash, 16))
+        data = trace.function_invocation
+        calldata = [self.starknet.decode_primitive_value(x) for x in data["calldata"]]
+        root = CallTreeNode(call_type=data["call_type"])
 
     @handle_client_errors
     def _get_traces(self, block_number: int) -> List[BlockSingleTransactionTrace]:

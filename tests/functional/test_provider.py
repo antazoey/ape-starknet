@@ -104,3 +104,8 @@ def test_set_balance(provider, account, tokens):
     # Clear cache to ensure recognized on chain
     del tokens.balance_cache[account.address_int]["eth"]
     assert account.balance == new_balance
+
+
+def test_get_call_tree(provider, contract, account):
+    receipt = contract.increase_balance(account, 123, sender=account)
+    call_tree = provider.get_call_tree(receipt.txn_hash)
