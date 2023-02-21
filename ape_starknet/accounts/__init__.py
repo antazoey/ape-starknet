@@ -15,7 +15,7 @@ from ape.types import AddressType, TransactionSignature
 from ape.utils import ZERO_ADDRESS, cached_property
 from ape.utils.basemodel import BaseModel
 from eth_keyfile import create_keyfile_json, decode_keyfile_json
-from eth_utils import text_if_str, to_bytes, to_hex
+from eth_utils import text_if_str, to_bytes
 from ethpm_types import ContractType
 from hexbytes import HexBytes
 from pydantic import Field, validator
@@ -51,6 +51,7 @@ from ape_starknet.utils import (
     get_random_private_key,
     pad_hex_str,
     to_checksum_address,
+    to_hex,
     to_int,
 )
 from ape_starknet.utils.basemodel import StarknetBase

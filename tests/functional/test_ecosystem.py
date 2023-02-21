@@ -52,3 +52,11 @@ def test_decode_logs(starknet, event_abi, raw_logs):
     actual = list(starknet.decode_logs(raw_logs, event_abi))
     assert len(actual) == 1
     assert actual[0].amount == "4321"
+
+
+def test_enrich_call_tree(provider, contract, account):
+    expected_balance = 123
+    receipt = contract.increase_balance(account, expected_balance, sender=account)
+    call_tree = provider.get_call_tree(receipt.txn_hash)
+
+    call_tree.enrich()

@@ -17,7 +17,8 @@ from ape.exceptions import (
 from ape.logging import logger
 from ape.types import AddressType, RawAddress
 from eth_typing import HexAddress, HexStr
-from eth_utils import add_0x_prefix, is_0x_prefixed, is_hex, is_text, remove_0x_prefix, to_hex
+from eth_utils import add_0x_prefix, is_0x_prefixed, is_hex, is_text, remove_0x_prefix
+from eth_utils import to_hex as eth_to_hex
 from eth_utils import to_int as eth_to_int
 from ethpm_types import ContractType
 from ethpm_types.abi import EventABI, MethodABI
@@ -292,13 +293,11 @@ def get_method_abi_from_selector(
     if isinstance(selector, str):
         selector = int(selector, 16)
 
-    for abi in contract_type.mutable_methods:
-        selector_to_check = get_selector_from_name(abi.name)
+    abi = select_method(contract_type, selector)
+    if not abi:
+        raise ContractError(f"Method '{selector}' not found in '{contract_type.name}'.")
 
-        if selector == selector_to_check:
-            return abi
-
-    raise ContractError(f"Method '{selector}' not found in '{contract_type.name}'.")
+    return abi
 
 
 def get_random_private_key() -> str:
@@ -344,6 +343,14 @@ def to_int(val: Any) -> int:
     return eth_to_int(val)
 
 
+def to_hex(val: Any) -> str:
+    if isinstance(val, (int, str, bytes)):
+        # Use this approach to automatically add padding
+        return HexBytes(val).hex()
+
+    return eth_to_hex(val)
+
+
 def get_class_hash(code: Union[str, HexBytes]):
     contract_class = create_contract_class(code)
     return compute_class_hash(contract_class)
@@ -368,3 +375,13 @@ def get_account_constructor_calldata(key_pair: KeyPair, class_hash: int) -> List
     else:
         logger.warning(f"Constructor calldata for account with class '{class_hash}' not known.")
         return []
+
+
+def select_method(contract_type: ContractType, selector: int) -> Optional[MethodABI]:
+    for abi in contract_type.methods:
+        selector_to_check = get_selector_from_name(abi.name)
+
+        if selector == selector_to_check:
+            return abi
+
+    return None

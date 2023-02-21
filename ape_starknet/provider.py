@@ -46,6 +46,7 @@ from ape_starknet.utils import (
     handle_client_errors,
     run_until_complete,
     to_checksum_address,
+    to_hex,
     to_int,
 )
 from ape_starknet.utils.basemodel import StarknetBase
@@ -247,10 +248,27 @@ class StarknetProvider(ProviderAPI, StarknetBase):
 
     def get_call_tree(self, txn_hash: str) -> CallTreeNode:
         receipt = self.starknet_client.get_transaction_receipt_sync(tx_hash=txn_hash)
-        trace = self._get_single_trace(receipt.block_number, int(txn_hash, 16))
-        data = trace.function_invocation
-        calldata = [self.starknet.decode_primitive_value(x) for x in data["calldata"]]
-        root = CallTreeNode(call_type=data["call_type"])
+        trace = self._get_single_trace(receipt.block_number, to_int(txn_hash))
+
+        def make_tree(data: Dict) -> CallTreeNode:
+            sub_calls = [make_tree(x) for x in data["internal_calls"]]
+            address = self.starknet.decode_address(data["contract_address"])
+            calldata = [self.starknet.decode_primitive_value(x) for x in data.get("calldata", [])]
+            returndata = [self.starknet.decode_primitive_value(x) for x in data.get("result", [])]
+            txn_hash = to_hex(trace.transaction_hash)
+
+            return CallTreeNode(
+                call_type=data["call_type"],
+                calls=sub_calls,
+                contract_id=address,
+                inputs=calldata,
+                method_id=to_hex(data["selector"]),
+                raw=data,
+                outputs=returndata,
+                txn_hash=txn_hash,
+            )
+
+        return make_tree(trace.function_invocation)
 
     @handle_client_errors
     def _get_traces(self, block_number: int) -> List[BlockSingleTransactionTrace]:

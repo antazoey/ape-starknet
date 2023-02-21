@@ -4,7 +4,7 @@ import pytest
 from starkware.starknet.public.abi import get_selector_from_name
 
 from ape_starknet.exceptions import StarknetProviderError
-from ape_starknet.utils import EXECUTE_ABI, is_checksum_address
+from ape_starknet.utils import EXECUTE_ABI, EXECUTE_SELECTOR, is_checksum_address, to_hex
 
 
 def test_get_nonce(provider, account, contract):
@@ -107,5 +107,23 @@ def test_set_balance(provider, account, tokens):
 
 
 def test_get_call_tree(provider, contract, account):
-    receipt = contract.increase_balance(account, 123, sender=account)
-    call_tree = provider.get_call_tree(receipt.txn_hash)
+    expected_balance = 123
+    receipt = contract.increase_balance(account, expected_balance, sender=account)
+    actual = provider.get_call_tree(receipt.txn_hash)
+
+    # Before enriched, the call tree shows the raw inputs to the account.
+    assert actual.txn_hash == receipt.txn_hash
+    assert actual.contract_id == receipt.receiver == account.address
+    assert actual.method_id == to_hex(EXECUTE_SELECTOR)
+    assert actual.inputs == [
+        1,  # Number of calls to make
+        int(contract.address, 16),
+        get_selector_from_name("increase_balance"),
+        0,
+        2,
+        2,  # Number of args to `increase_balance`
+        account.address_int,
+        expected_balance,
+    ]
+    assert actual.outputs == [1, expected_balance]
+    assert actual.calls == []

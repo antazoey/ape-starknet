@@ -8,7 +8,7 @@ from ape.cli.options import ApeCliContextObject
 from ape.logging import logger
 from ape.utils import add_padding_to_strings
 from eth_keyfile import decode_keyfile_json
-from eth_utils import is_hex, text_if_str, to_bytes, to_hex
+from eth_utils import is_hex, text_if_str, to_bytes
 from hexbytes import HexBytes
 from starkware.crypto.signature.signature import EC_ORDER
 from starkware.starknet.definitions.fields import ContractAddressSalt
@@ -24,6 +24,7 @@ from ape_starknet.utils import (
     ARGENTX_ACCOUNT_CLASS_HASH,
     OPEN_ZEPPELIN_ACCOUNT_CLASS_HASH,
     PLUGIN_NAME,
+    to_hex,
     to_int,
 )
 

@@ -1,10 +1,11 @@
+import sys
 from copy import deepcopy
 from dataclasses import asdict
-from typing import Any, Dict, List, Optional
+from typing import IO, Any, Dict, List, Optional
 
 from ape.api import ReceiptAPI, TransactionAPI
 from ape.exceptions import APINotImplementedError, TransactionError
-from ape.types import AddressType, ContractLog
+from ape.types import AddressType, CallTreeNode, ContractLog
 from ape.utils import abstractmethod, cached_property, raises_not_implemented
 from ethpm_types import ContractType, HexBytes
 from ethpm_types.abi import EventABI, MethodABI
@@ -331,7 +332,7 @@ class StarknetReceipt(ReceiptAPI, StarknetBase):
     def decode_logs(  # type: ignore[empty-body]
         self, abi: Optional[ContractEventABI] = None
     ) -> List[ContractLog]:
-        # Overriden in InvocationReceipt
+        # Overriden in InvokeFunctionReceipt
         pass
 
 
@@ -368,13 +369,17 @@ class InvokeFunctionReceipt(AccountTransactionReceipt):
         return self.gas_used >= (self.max_fee or 0)
 
     @cached_property
-    def trace(self) -> Dict:  # type: ignore
+    def call_tree(self) -> CallTreeNode:
+        return self.provider.get_call_tree(self.txn_hash)
+
+    @cached_property
+    def _trace(self) -> Dict:
         trace = self.provider._get_single_trace(self.block_number, to_int(self.txn_hash))
         return extract_trace_data(trace) if trace else {}
 
     @property
     def returndata(self):
-        return self.trace.get("result", [])
+        return self._trace.get("result", [])
 
     @cached_property
     def return_value(self) -> Any:
@@ -432,7 +437,21 @@ class InvokeFunctionReceipt(AccountTransactionReceipt):
                 for event_key in log.get("keys", []):
                     event_abi = selectors[contract_address][event_key]
                     decoded_logs.extend(list(self.starknet.decode_logs([log], event_abi)))
+
             return decoded_logs
+
+    def show_trace(self, verbose: bool = False, file: IO[str] = sys.stdout):
+        call_tree = self.call_tree
+        if not call_tree:
+            return
+
+        call_tree.enrich()
+        self.chain_manager._reports.show_trace(
+            call_tree,
+            sender=self.sender,
+            transaction_hash=self.txn_hash,
+            verbose=verbose,
+        )
 
 
 class ContractDeclaration(AccountTransactionReceipt):
@@ -463,7 +482,12 @@ class ContractDeclaration(AccountTransactionReceipt):
 
 
 __all__ = [
+    "AccountTransactionReceipt",
     "ContractDeclaration",
+    "DeclareTransaction",
+    "DeployAccountReceipt",
+    "DeployAccountTransaction",
+    "InvokeFunctionReceipt",
     "InvokeFunctionTransaction",
     "StarknetReceipt",
     "StarknetTransaction",

@@ -3,12 +3,11 @@ import re
 from typing import List, Tuple, Union
 
 import pytest
-from eth_utils import to_hex
 from starknet_py.utils.crypto.facade import message_signature
 from starkware.crypto.signature.signature import EC_ORDER
 
 from ape_starknet.types import StarknetSignableMessage
-from ape_starknet.utils import get_random_private_key, to_int
+from ape_starknet.utils import get_random_private_key, to_hex, to_int
 
 from .conftest import ApeStarknetCliRunner
 

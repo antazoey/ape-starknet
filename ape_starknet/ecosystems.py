@@ -1,12 +1,15 @@
+from copy import deepcopy
 from enum import Enum
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Type, Union
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Type, Union, cast
 
 from ape.api import BlockAPI, EcosystemAPI, ReceiptAPI, TransactionAPI
 from ape.api.networks import ProxyInfoAPI
 from ape.contracts import ContractContainer
-from ape.types import AddressType, ContractLog, RawAddress
+from ape.types import AddressType, CallTreeNode, ContractLog, RawAddress
 from ape.utils import EMPTY_BYTES32, to_int
-from eth_utils import is_0x_prefixed
+from ape_ethereum import Ethereum
+from eth_typing import Hash32
+from eth_utils import humanize_hash, is_0x_prefixed
 from ethpm_types import ContractType
 from ethpm_types.abi import ConstructorABI, EventABI, EventABIType, MethodABI
 from hexbytes import HexBytes
@@ -38,8 +41,11 @@ from ape_starknet.transactions import (
 )
 from ape_starknet.utils import (
     EXECUTE_ABI,
+    EXECUTE_METHOD_NAME,
+    EXECUTE_SELECTOR,
     STARKNET_FEE_TOKEN_SYMBOL,
     get_method_abi_from_selector,
+    select_method,
     to_checksum_address,
 )
 from ape_starknet.utils.basemodel import StarknetBase
@@ -71,7 +77,7 @@ class StarknetBlock(BlockAPI):
     hash: Optional[int] = None
     parent_hash: Any = Field(to_int(EMPTY_BYTES32), alias="parentHash")
 
-    @validator("hash", "parent_hash", pre=True)
+    @validator("hash", "parent_hash", pre=True, allow_reuse=True)
     def validate_hexbytes(cls, value):
         if not isinstance(value, int):
             return to_int(value)
@@ -457,3 +463,48 @@ class Starknet(EcosystemAPI, StarknetBase):
 
     def decode_calldata(self, abi: Union[ConstructorABI, MethodABI], calldata: bytes) -> Dict:
         raise NotImplementedError()
+
+    def enrich_calltree(self, call: CallTreeNode, **kwargs) -> CallTreeNode:
+        ethereum = cast(Ethereum, self.network_manager.ethereum)
+        kwargs["in_place"] = kwargs.get("in_place", True)
+        enriched_call = call if kwargs["in_place"] else deepcopy(call)
+
+        # Enrich subcalls before any _return_ statement.
+        enriched_call.calls = [self.enrich_calltree(c, **kwargs) for c in enriched_call.calls]
+
+        if not str(enriched_call.contract_id).startswith("0x"):
+            # Already enriched.
+            return enriched_call
+
+        # We know it is a checksummed-address if we get to this point.
+        address = cast(AddressType, enriched_call.contract_id)
+
+        # Handle commonly known method selectors here.
+        if to_int(enriched_call.method_id) == EXECUTE_SELECTOR:
+            enriched_call.method_id = EXECUTE_METHOD_NAME
+
+        contract_type = self.chain_manager.contracts.get(address)
+        if not contract_type:
+            if enriched_call.method_id == EXECUTE_METHOD_NAME:
+                # We know at least that it was an account.
+                address_bytes = Hash32(HexBytes(enriched_call.contract_id))
+                humanized_address = humanize_hash(address_bytes)
+                enriched_call.contract_id = f"Account@{humanized_address}"
+
+            # Contract required to enrich further.
+            return enriched_call
+
+        # If we get here, we have contract information.
+        enriched_call.contract_id = contract_type.name or enriched_call.contract_id
+        method = select_method(contract_type, enriched_call.method_id)
+        if method:
+            enriched_call.method_id = method.name
+
+        method_id_bytes = HexBytes(enriched_call.method_id) if enriched_call.method_id else None
+        if method_id_bytes and method_id_bytes in contract_type.methods:
+            method_abi = contract_type.methods[method_id_bytes]
+            enriched_call.method_id = method_abi.name or enriched_call.method_id
+            enriched_call = ethereum._enrich_calldata(enriched_call, method_abi, **kwargs)
+            enriched_call = ethereum._enrich_returndata(enriched_call, method_abi, **kwargs)
+
+        return enriched_call
